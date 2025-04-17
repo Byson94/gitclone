@@ -1,0 +1,14 @@
+Making a git clone
+
+How git works: https://medium.com/@praveenmuth2/learn-how-git-works-internally-with-simple-diagrams-a9349dc32831
+
+CVCS and DVCS are the two version control systems.
+
+CVCS = Central version control system
+DVCS = Distributed version control system
+
+I will make DVC system because thats what git is based on.
+
+
+Programming language = JavaScript (NodeJS)
+Tool to make it execute = single-executable (if not working then use nvm to go to node 23)
