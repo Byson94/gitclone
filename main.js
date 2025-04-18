@@ -46,11 +46,17 @@ if (arguments[1]) {
     console.log("stage-1: pass");
 
     try {
+      if (!fs.existsSync("./.gitcloneignore")) {
+        fs.writeFileSync(
+          "./.gitcloneignore",
+          `[".git", ".gitclone", ".gitcloneignore"]`
+        );
+      }
       if (!fs.existsSync("./.gitclone/index")) {
         fs.writeFileSync("./.gitclone/index", "");
       }
       if (!fs.existsSync("./.gitclone/HEAD")) {
-        fs.writeFileSync("./.gitclone/HEAD", process.cwd()); // get current active dir
+        fs.writeFileSync("./.gitclone/HEAD", "refs: refs/heads/master"); // current branch
       }
       if (!fs.existsSync("./.gitclone/refs/heads/master")) {
         fs.writeFileSync("./.gitclone/refs/heads/master", ""); // get current active dir
@@ -71,7 +77,81 @@ if (arguments[1]) {
     }
 
     if (arguments[2] === ".") {
-      console.log("not yet implemented");
+      const cloneignore = JSON.parse(
+        fs.readFileSync(`./.gitcloneignore`, "utf8")
+      );
+
+      function getAllFiles(dirPath) {
+        let results = [];
+
+        const entries = fs.readdirSync(dirPath);
+        for (const entry of entries) {
+          const fullPath = path.join(dirPath, entry);
+
+          // skip ignored
+          if (cloneignore.some((pattern) => fullPath.includes(pattern)))
+            continue;
+
+          const stats = fs.statSync(fullPath);
+          if (stats.isDirectory()) {
+            results = results.concat(getAllFiles(fullPath));
+          } else {
+            results.push(fullPath);
+          }
+        }
+
+        return results;
+      }
+
+      const allFiles = getAllFiles(process.cwd());
+
+      allFiles.forEach((file) => {
+        console.log(file);
+        const data = fs.readFileSync(file, "utf8");
+        // console.log(dirPath);
+        let dataHash = createHash("sha256").update(data).digest("base64");
+        zlib.gzip(data, (err, compressedData) => {
+          if (err) {
+            console.error("Compression error:", err);
+            return;
+          }
+          const dirPath = path.join(
+            ".gitclone",
+            "objects",
+            ...dataHash.split("/").slice(0, -1)
+          );
+          const filePath = path.join(dirPath, dataHash.split("/").pop());
+          if (!fs.existsSync(dirPath)) {
+            fs.mkdirSync(dirPath, { recursive: true });
+          }
+          if (!fs.existsSync(filePath)) {
+            fs.writeFileSync(filePath, compressedData, "utf8");
+          }
+        });
+        // console.log(dataHash);
+
+        // index
+        let indexLines = fs
+          .readFileSync("./.gitclone/index", "utf8")
+          .split("\n");
+
+        let indexUpdated = false;
+        indexLines = indexLines.map((line) => {
+          let [filePath, hash] = line.split(" > ");
+          if (filePath === file) {
+            indexUpdated = true;
+            return `${file} > ${dataHash}`;
+          }
+          return line;
+        });
+
+        if (!indexUpdated) {
+          indexLines.push(`${file} > ${dataHash}`);
+        }
+
+        // write the updated index back to the file
+        fs.writeFileSync("./.gitclone/index", indexLines.join("\n"), "utf8");
+      });
     } else if (arguments[2]) {
       try {
         const data = fs.readFileSync(`./${arguments[2]}`, "utf8");
@@ -170,14 +250,14 @@ if (arguments[1]) {
 
         // console.log(indexData);
       } else {
-        console.error("ERROR: Invalid argument found");
+        console.error("ERROR: Invalid argument found!");
       }
     }
   } else if (arguments[1] === "log") {
     let latestCommit = fs.readFileSync("./.gitclone/refs/heads/master", "utf8");
 
     if (latestCommit === "") {
-      console.error("ERROR: No commits found");
+      console.error("ERROR: No commits found!");
     } else {
       let currentCommit = latestCommit;
 
@@ -208,6 +288,79 @@ if (arguments[1]) {
         currentCommit = parentHash;
       }
     }
+  } else if (arguments[1] === "reset") {
+    if (arguments[2]) {
+      if (arguments[3] === "--hard" || !arguments[3]) {
+        if (
+          fs.readFileSync(
+            `${process.cwd()}/.gitclone/objects/${arguments[2]}`,
+            "utf8"
+          )
+        ) {
+          let treeContent = fs
+            .readFileSync(
+              `${process.cwd()}/.gitclone/objects/${arguments[2]}`,
+              "utf8"
+            )
+            .split("\n");
+
+          let parentLineFound = treeContent.find((line) =>
+            line.startsWith("[parent] > ")
+          );
+          if (parentLineFound) {
+            // now we start moving to the previous commit
+            // find all data
+            let filteredTreeContent = treeContent.filter(
+              (line) =>
+                !line.startsWith("[parent] > ") &&
+                !line.startsWith("[message] > ")
+            );
+
+            filteredTreeContent = filteredTreeContent.map((line) => {
+              let [filePath, hash] = line.split(" > ");
+              let dataInHashFile;
+              if (
+                !fs.existsSync(
+                  `${process.cwd()}/.gitclone/objects/${hash.trim()}` // trim to ensure that no space exist
+                )
+              ) {
+                console.warn(
+                  `Warning: Object not found for hash ${hash.trim()}`
+                );
+                return;
+              }
+              dataInHashFile = fs.readFileSync(
+                `${process.cwd()}/.gitclone/objects/${hash.trim()}`
+              );
+
+              const compressedBuffer = Buffer.from(dataInHashFile, "base64");
+
+              try {
+                // Decompress synchronously
+                const decompressedBuffer = zlib.gunzipSync(compressedBuffer);
+                const decompressedStr = decompressedBuffer.toString();
+
+                fs.writeFileSync(filePath.trim(), decompressedStr);
+              } catch (err) {
+                console.error("Decompression error:", err);
+              }
+
+              // post revert
+              fs.writeFileSync("./.gitclone/index", ""); // clean the index
+              fs.writeFileSync("./.gitclone/refs/heads/master", hash.trim());
+            });
+          } else {
+            console.error("ERROR: Described commit is not a commit!");
+          }
+        } else {
+          console.error("ERROR: Commit not found!");
+        }
+      }
+    } else {
+      console.error("ERROR: Invalid argument found!");
+    }
+  } else {
+    console.error("ERROR: Command not found!");
   }
 }
 
