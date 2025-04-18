@@ -8,9 +8,12 @@ process.removeAllListeners("warning"); // remove all runtime warnings from nodej
 // process.argv[ process the arguments
 let arguments = process.argv;
 
-if (arguments[0].slice(-4) === "node") {
+if (
+  arguments[0].slice(-4) === "node" ||
+  arguments[0].slice(-8) === "gitclone"
+) {
   arguments = arguments.slice(1);
-}
+} // slicing them off since they are not useful
 
 // console.log(arguments);
 
@@ -359,8 +362,6 @@ if (arguments[1]) {
     } else {
       console.error("ERROR: Invalid argument found!");
     }
-  } else {
-    console.error("ERROR: Command not found!");
   }
 }
 
