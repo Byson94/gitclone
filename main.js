@@ -1,5 +1,6 @@
-const fs = require("node:fs");
-const { createHash } = require("crypto");
+const fs = require("node:fs"); // for accessing filesystem and changing files.
+const { createHash } = require("crypto"); // for hashing strings.
+const zlib = require("zlib");
 
 process.removeAllListeners("warning"); // remove all runtime warnings from nodejs
 
@@ -41,8 +42,13 @@ if (arguments[1]) {
     console.log("stage-1: pass");
 
     try {
-      fs.writeFileSync("./.gitclone/index", "");
-      fs.writeFileSync("./.gitclone/ROOT", process.cwd()); // get current active dir
+      if (!fs.existsSync("./.gitclone/index")) {
+        fs.writeFileSync("./.gitclone/index", "");
+      }
+
+      if (!fs.existsSync("./.gitclone/HEAD")) {
+        fs.writeFileSync("./.gitclone/HEAD", process.cwd()); // get current active dir
+      }
     } catch (err) {
       console.error(err);
     }
@@ -66,11 +72,42 @@ if (arguments[1]) {
         let dirPath = `${process.cwd()}/${arguments[2]}`; // we use process.cwd() instead of __dirname so that we get the current active directory
         // console.log(dirPath);
         let dataHash = createHash("sha256").update(data).digest("base64");
+        zlib.gzip(data, (err, compressedData) => {
+          if (err) {
+            console.error("Compression error:", err);
+            return;
+          }
+          if (!fs.existsSync(`./.gitclone/objects/${dataHash}`)) {
+            fs.writeFileSync(
+              "./.gitclone/objects/" + dataHash,
+              compressedData,
+              "utf8"
+            );
+          }
+        });
         // console.log(dataHash);
-        fs.writeFileSync(
-          "./.gitclone/objects/" + dataHash,
-          `${dirPath} > ${dataHash}`
-        );
+
+        // index
+        let indexLines = fs
+          .readFileSync("./.gitclone/index", "utf8")
+          .split("\n");
+
+        let indexUpdated = false;
+        indexLines = indexLines.map((line) => {
+          let [filePath, hash] = line.split(" > ");
+          if (filePath === dirPath) {
+            indexUpdated = true;
+            return `${dirPath} > ${dataHash}`;
+          }
+          return line;
+        });
+
+        if (!indexUpdated) {
+          indexLines.push(`${dirPath} > ${dataHash}`);
+        }
+
+        // write the updated index back to the file
+        fs.writeFileSync("./.gitclone/index", indexLines.join("\n"), "utf8");
       } catch (err) {
         console.error(err);
       }
@@ -78,6 +115,14 @@ if (arguments[1]) {
       console.error("ERROR: Invalid argument found");
     }
   } else if (arguments[1] === "commit") {
-    console.log("Not yet implemented");
+    if (arguments[2] === "-m") {
+      console.log("commits the changes");
+      if (arguments[3]) {
+      } else {
+        console.error("ERROR: Invalid argument found");
+      }
+    }
   }
 }
+
+// cons
