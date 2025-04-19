@@ -46,7 +46,6 @@ if (arguments[1]) {
     } catch (err) {
       console.error(err);
     }
-    console.log("stage-1: pass");
 
     try {
       if (!fs.existsSync("./.gitcloneignore")) {
@@ -67,7 +66,6 @@ if (arguments[1]) {
     } catch (err) {
       console.error(err);
     }
-    console.log("stage-2: pass");
 
     console.log("Gitclone repository has been initialized!");
   } else if (arguments[1] === "add") {
@@ -109,7 +107,6 @@ if (arguments[1]) {
       const allFiles = getAllFiles(process.cwd());
 
       allFiles.forEach((file) => {
-        console.log(file);
         const data = fs.readFileSync(file, "utf8");
         // console.log(dirPath);
         let dataHash = createHash("sha256").update(data).digest("base64");
@@ -216,8 +213,13 @@ if (arguments[1]) {
           .readFileSync("./.gitclone/index", "utf8")
           .split("\n")
           .slice(1); // slice because the 1st line will be a \n
+
+        let currentBranch = fs
+          .readFileSync("./.gitclone/HEAD", "utf8")
+          .split("/")[2]
+          .trim(); // to avoid unnecessary space
         let parentName = fs.readFileSync(
-          "./.gitclone/refs/heads/master",
+          `./.gitclone/refs/heads/${currentBranch}`,
           "utf8"
         );
         let treeData = "";
@@ -257,7 +259,16 @@ if (arguments[1]) {
       }
     }
   } else if (arguments[1] === "log") {
-    let latestCommit = fs.readFileSync("./.gitclone/refs/heads/master", "utf8");
+    console.log("Commit History:\n---------------");
+    let currentBranch = fs
+      .readFileSync("./.gitclone/HEAD", "utf8")
+      .split("/")[2]
+      .trim();
+    let latestCommit = fs.readFileSync(
+      `./.gitclone/refs/heads/${currentBranch}`,
+      "utf8"
+    );
+    console.log("--latest--");
 
     if (latestCommit === "") {
       console.error("ERROR: No commits found!");
@@ -362,7 +373,120 @@ if (arguments[1]) {
     } else {
       console.error("ERROR: Invalid argument found!");
     }
+  } else if (arguments[1] === "branch") {
+    if (arguments[2]) {
+      const masterData = fs.readFileSync(
+        `./.gitclone/refs/heads/master`,
+        "utf8"
+      );
+      if (masterData) {
+        fs.writeFileSync(`./.gitclone/refs/heads/${arguments[2]}`, masterData);
+      } else {
+        console.error("ERROR: Latest commit not found!");
+      }
+    } else {
+      fs.readdir(`./.gitclone/refs/heads/`, (err, files) => {
+        console.log("Branches: \n---------");
+        const currentBranchPointer = fs.readFileSync(
+          "./.gitclone/HEAD",
+          "utf8"
+        );
+        const currentbranchPath = currentBranchPointer.split(":")[1].trim();
+        files.forEach((file) => {
+          if (`refs/heads/${file}` === currentbranchPath) {
+            console.log(`${file} [current]`);
+          } else {
+            console.log(file);
+          }
+        });
+      });
+    }
+  } else if (arguments[1] === "switch") {
+    if (arguments[2]) {
+      if (fs.existsSync(`./.gitclone/refs/heads/${arguments[2]}`, "utf8")) {
+        const currentBranch = fs.readFileSync("./.gitclone/HEAD", "utf8");
+        let currentBranchData = currentBranch.split("/");
+        currentBranchData[2] = arguments[2];
+        const updatedBranchData = currentBranchData.join("/");
+        fs.writeFileSync("./.gitclone/HEAD", updatedBranchData);
+      } else {
+        console.error("ERROR: Branch not found!");
+      }
+    } else {
+      console.error("ERROR: Invalid argument found!");
+    }
   }
 }
 
-// cons
+const runGC = () => {
+  function getAllFiles(dirPath) {
+    let results = [];
+    const entries = fs.readdirSync(dirPath);
+    for (const entry of entries) {
+      const fullPath = path.join(dirPath, entry);
+      const stats = fs.statSync(fullPath);
+      if (stats.isDirectory()) {
+        results = results.concat(getAllFiles(fullPath));
+      } else {
+        results.push(fullPath);
+      }
+    }
+    return results;
+  }
+
+  const allFiles = getAllFiles(`${process.cwd()}/.gitclone/objects/`);
+  const safeFilesSet = new Set(); // to avoid duplicates
+  const branches = fs.readdirSync(`./.gitclone/refs/heads/`);
+
+  branches.forEach((branch) => {
+    let latestCommit = fs
+      .readFileSync(`./.gitclone/refs/heads/${branch}`, "utf8")
+      .trim();
+
+    if (!latestCommit) {
+      console.error(`ERROR: No commits found in ${branch}`);
+      return;
+    }
+
+    let currentCommit = latestCommit;
+
+    while (currentCommit !== "none") {
+      const commitPath = `${process.cwd()}/.gitclone/objects/${currentCommit}`;
+      if (fs.existsSync(commitPath)) {
+        safeFilesSet.add(commitPath);
+      }
+
+      const commitData = fs.readFileSync(commitPath, "utf8");
+      const lines = commitData.split("\n");
+
+      const parentLine = lines.find((line) => line.startsWith("[parent] > "));
+      const parentHash = parentLine
+        ? parentLine.split(" > ")[1].trim()
+        : "none";
+
+      for (let line of lines) {
+        if (line.startsWith("[parent]") || line.startsWith("[message]"))
+          continue;
+
+        if (line.includes(" > ")) {
+          const [filePath, hash] = line.split(" > ").map((part) => part.trim());
+          const fileHashPath = `${process.cwd()}/.gitclone/objects/${hash}`;
+          if (fs.existsSync(fileHashPath)) {
+            safeFilesSet.add(fileHashPath);
+          }
+        }
+      }
+
+      if (parentHash === "none") break;
+      currentCommit = parentHash;
+    }
+  });
+
+  for (let filePath of allFiles) {
+    if (!safeFilesSet.has(filePath)) {
+      fs.unlinkSync(filePath);
+    }
+  }
+};
+
+runGC();
