@@ -1,3 +1,3 @@
-# A git clone
+# Git clone
 
-An example nodejs software that works like git
+Git clone is a simple git like program i made using nodejs to learn how git works under the hood.
