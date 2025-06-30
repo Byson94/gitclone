@@ -125,7 +125,7 @@ So, first of all, it gets the commit hash of the commit file from the command (`
 
 So, basically if the commit file looks smth like this:
 
-```toml
+```txt
 /home/user/Documents/GitClone/exampleFile1 > awci9SkRqPjPJTMG7gRZVt+ER50CHYDK+jE2l6x9pkk=
 /home/user/Documents/GitClone/exampleFile2 > xKbd5jWrTehvdmoPXfO6QF9YWOAud4Bz2adEBGiqJfc=
 ...
