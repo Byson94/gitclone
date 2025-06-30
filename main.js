@@ -1,3 +1,5 @@
+// Full explanation of the code in `/architecture/README.md`
+
 const fs = require("node:fs"); // for accessing filesystem and changing files.
 const path = require("path");
 const { createHash } = require("crypto"); // for hashing strings.
@@ -361,7 +363,10 @@ if (arguments[1]) {
 
               // post revert
               fs.writeFileSync("./.gitclone/index", ""); // clean the index
-              fs.writeFileSync("./.gitclone/refs/heads/master", hash.trim());
+              fs.writeFileSync(
+                "./.gitclone/refs/heads/master",
+                arguments[2].trim()
+              );
             });
           } else {
             console.error("ERROR: Described commit is not a commit!");
